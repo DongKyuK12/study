@@ -152,6 +152,264 @@
   }
 ```
 
+🎯 왜 일반 함수에서는 this가 달라질까요?
+
+  핵심 개념부터
+  
+```js
+  // 이 함수를 누가 호출하느냐에 따라 this가 달라져요!
+  function sayThis() {
+    console.log('this는:', this);
+  }
+
+  const obj = { name: '객체', sayThis: sayThis };
+
+  sayThis();     // this = window (브라우저) 또는 global (Node.js)
+  obj.sayThis(); // this = obj 객체
+```
+
+  ---
+  1. addEventListener에서 일어나는 일
+
+```js
+  class Button {
+    constructor(element) {
+      this.element = element;  // DOM 요소 (예: <button>)
+      this.clickCount = 0;
+    }
+
+    handleClickNormal() {
+      console.log('handleClickNormal에서 this:', this); // Button 객체 ✅
+
+      this.element.addEventListener('click', function() {
+        console.log('콜백 함수에서 this:', this); // button DOM 요소 ❌
+        // ☝️ addEventListener가 이 함수를 "button 요소 컨텍스트"로 호출함!
+      });
+    }
+  }
+
+  왜 이런 일이 일어날까요?
+
+  addEventListener는 내부적으로 이렇게 동작해요:
+  // addEventListener의 내부 동작 (단순화)
+  element.addEventListener = function(event, callback) {
+    // 이벤트 발생시...
+    callback.call(element); // 👈 element를 this로 해서 callback 호출!
+  };
+```
+  ---
+  2. 단계별로 자세히 보기
+
+  Step 1: 객체 생성과 메서드 호출
+```js
+  // HTML: <button id="myBtn">클릭</button>
+  const button = document.getElementById('myBtn');
+  const btnInstance = new Button(button);
+
+  btnInstance.handleClickNormal(); // 👈 이때까지는 this = btnInstance
+
+  Step 2: addEventListener 등록
+
+  handleClickNormal() {
+    console.log('1. 여기서 this:', this); // Button {element: button, clickCount: 0}
+
+    this.element.addEventListener('click', function() {
+      console.log('2. 여기서 this:', this); // <button id="myBtn">클릭</button>
+      // ☝️ 브라우저가 이 함수를 button 요소로 호출함!
+    });
+  }
+```
+
+  Step 3: 실제 클릭 이벤트 발생
+
+```js
+  // 사용자가 버튼을 클릭하면 브라우저가 내부적으로 이렇게 실행:
+  function 내부브라우저동작() {
+    const buttonElement = document.getElementById('myBtn');
+    const callback = /* 등록된 콜백 함수 */;
+
+    // callback을 buttonElement 컨텍스트로 호출
+    callback.call(buttonElement); // 👈 this = buttonElement
+  }
+```
+
+  ---
+  3. 실제 예시로 확인해보기
+
+```html
+  <!DOCTYPE html>
+  <html>
+  <body>
+    <button id="testBtn">테스트 버튼</button>
+
+    <script>
+      class Button {
+        constructor(element) {
+          this.element = element;
+          this.clickCount = 0;
+          this.name = 'Button 인스턴스';
+        }
+
+        handleClickNormal() {
+          console.log('=== 일반 함수 버전 ===');
+          console.log('메서드에서 this.name:', this.name); // "Button 인스턴스"
+
+          this.element.addEventListener('click', function() {
+            console.log('콜백에서 this:', this);
+            console.log('콜백에서 this.name:', this.name); // undefined
+            console.log('콜백에서 this.id:', this.id); // "testBtn" (button의 id)
+
+            // this.clickCount++; // 에러! button 요소에는 clickCount가 없음
+          });
+        }
+
+        handleClickArrow() {
+          console.log('=== 화살표 함수 버전 ===');
+          console.log('메서드에서 this.name:', this.name); // "Button 인스턴스"
+
+          this.element.addEventListener('click', () => {
+            console.log('콜백에서 this:', this);
+            console.log('콜백에서 this.name:', this.name); // "Button 인스턴스"
+            console.log('콜백에서 this.clickCount:', this.clickCount); // 0, 1, 2, ...
+
+            this.clickCount++; // 정상 동작!
+            console.log('클릭 횟수:', this.clickCount);
+          });
+        }
+      }
+
+      const btn = document.getElementById('testBtn');
+      const btnInstance = new Button(btn);
+
+      // 둘 다 등록해서 비교해보기
+      btnInstance.handleClickNormal();
+      btnInstance.handleClickArrow();
+    </script>
+  </body>
+  </html>
+```
+  ---
+  4. 화살표 함수는 왜 다를까요?
+
+  화살표 함수의 특별한 규칙:
+  - 화살표 함수는 자기만의 this를 만들지 않아요
+  - 대신 정의된 위치의 this를 그대로 사용해요
+```js
+  class Button {
+    constructor(element) {
+      this.element = element;
+      this.clickCount = 0;
+    }
+
+    handleClickArrow() {
+      // 여기서 this = Button 인스턴스
+
+      this.element.addEventListener('click', () => {
+        // 화살표 함수는 여기서 정의됨
+        // 따라서 this = 정의된 위치의 this = Button 인스턴스
+        console.log(this.clickCount); // Button 인스턴스의 clickCount
+      });
+    }
+  }
+```
+  ---
+  5. 일반 함수를 고치는 방법들
+
+  방법 1: 화살표 함수 사용 (추천)
+```js
+  handleClick() {
+    this.element.addEventListener('click', () => {
+      this.clickCount++; // ✅ 정상 동작
+    });
+  }
+```
+  방법 2: this를 변수에 저장
+```js
+  handleClick() {
+    const self = this; // this를 변수에 저장
+
+    this.element.addEventListener('click', function() {
+      self.clickCount++; // self 사용
+      console.log(self.clickCount);
+    });
+  }
+```
+
+  방법 3: bind() 사용
+```js
+  handleClick() {
+    this.element.addEventListener('click', function() {
+      this.clickCount++;
+      console.log(this.clickCount);
+    }.bind(this)); // 👈 this를 바인딩
+  }
+```
+  ---
+  6. 실제 작동하는 예시
+```js
+  // Node.js나 브라우저에서 테스트 가능한 예시
+  class Counter {
+    constructor() {
+      this.count = 0;
+      this.name = 'Counter';
+    }
+
+    // 일반 함수 - 문제 있음
+    startNormal() {
+      console.log('startNormal에서 this.name:', this.name); // "Counter"
+
+      setTimeout(function() {
+        console.log('setTimeout 콜백에서 this:', this); // global 객체 또는 undefined
+        console.log('setTimeout 콜백에서 this.name:', this.name); // undefined
+        // this.count++; // 에러!
+      }, 1000);
+    }
+
+    // 화살표 함수 - 정상 동작
+    startArrow() {
+      console.log('startArrow에서 this.name:', this.name); // "Counter"
+
+      setTimeout(() => {
+        console.log('setTimeout 콜백에서 this:', this); // Counter 인스턴스
+        console.log('setTimeout 콜백에서 this.name:', this.name); // "Counter"
+        this.count++; // 정상 동작!
+        console.log('카운트:', this.count);
+      }, 1000);
+    }
+  }
+
+  const counter = new Counter();
+  counter.startNormal(); // 문제 발생
+  counter.startArrow();  // 정상 동작
+```
+  ---
+  7. 핵심 정리
+```js
+  class MyClass {
+    constructor() {
+      this.value = 42;
+    }
+
+    method() {
+      // 여기서 this = MyClass 인스턴스
+
+      // ❌ 일반 함수: 호출하는 쪽에서 this 결정
+      someAsyncFunction(function() {
+        console.log(this.value); // undefined (this가 바뀜)
+      });
+
+      // ✅ 화살표 함수: 정의된 위치의 this 사용
+      someAsyncFunction(() => {
+        console.log(this.value); // 42 (this 유지됨)
+      });
+    }
+  }
+```
+  기억할 점:
+  - 일반 함수: "누가 나를 호출했느냐"에 따라 this 결정
+  - 화살표 함수: "내가 어디서 정의되었느냐"의 this 사용
+
+
   ---
   5. Express에서의 this 사용 예시
 ```js
@@ -208,6 +466,7 @@
   app.delete('/users/:id', userController.deleteUser);
 ```
   ---
+
   6. this 바인딩 방법들
 
   A) bind() 사용
